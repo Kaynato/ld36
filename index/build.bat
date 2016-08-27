@@ -1,0 +1,1 @@
+coffee -c -b js/index.coffee & coffee -c -b js/paper.coffee
