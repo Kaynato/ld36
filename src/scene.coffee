@@ -1,3 +1,4 @@
+# 6
 # Cutscene handler and container
 Scene =
 	# write text with character (or no character)
