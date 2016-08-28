@@ -23,6 +23,7 @@ setting =
 		crossRadius: 4
 		crossColor: 'black'
 		crossWidth: 0.8
+		backWallColor: new Color 0, 0, 0, 0.2
 	menu:
 		xpos: 620
 		xSelectOffset: 30
@@ -70,6 +71,21 @@ contextTransition = (newContext) ->
 	# Do whatever is necessary to transition to new context here
 	# And then finally set context
 	window.GameContext = newContext
+
+# takes in coordinate array [x y]
+coordToPix = (coord) ->
+	if !Number.isNaN coord[0]
+		return [
+			coord[0] * setting.game.gridInterval
+			coord[1] * setting.game.gridInterval
+		]
+	else if !Number.isNaN coord.x
+		return [
+			coord.x * setting.game.gridInterval
+			coord.y * setting.game.gridInterval
+		]
+	else
+		console.err "Attempted to transform #{coord} from grid coordinates into pixels, but failed!"
 
 # setup proper layering
 Layers =

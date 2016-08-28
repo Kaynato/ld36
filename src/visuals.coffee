@@ -43,6 +43,17 @@ Visuals =
 					strokeWidth: setting.game.gridWidth
 			Layers.grid.visible = false
 			return out
+		backWall: do ->
+			Layers.backWall.activate()
+			Layers.backWall.visible = false
+			return new Path
+				segments: [
+					[0, 0]
+					[1, 0]
+					[1, 1]
+					[0, 1]
+				]
+				fillColor: setting.game.backWallColor
 	# cursor selector in game portion - set at zero so moving is done by layer
 	cursor: do ->
 		Layers.cursor.activate()

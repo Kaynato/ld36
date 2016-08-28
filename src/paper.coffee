@@ -23,6 +23,7 @@ setting =
 		crossRadius: 4
 		crossColor: 'black'
 		crossWidth: 0.8
+		backWallColor: new Color 0, 0, 0, 0.2
 	menu:
 		xpos: 620
 		xSelectOffset: 30
@@ -71,6 +72,21 @@ contextTransition = (newContext) ->
 	# And then finally set context
 	window.GameContext = newContext
 
+# takes in coordinate array [x y]
+coordToPix = (coord) ->
+	if !Number.isNaN coord[0]
+		return [
+			coord[0] * setting.game.gridInterval
+			coord[1] * setting.game.gridInterval
+		]
+	else if !Number.isNaN coord.x
+		return [
+			coord.x * setting.game.gridInterval
+			coord.y * setting.game.gridInterval
+		]
+	else
+		console.err "Attempted to transform #{coord} from grid coordinates into pixels, but failed!"
+
 # setup proper layering
 Layers =
 	backlight: new Layer()
@@ -97,8 +113,7 @@ Layers =
 	# Overlay (just in case)
 	overlay: new Layer()
 
-Layers.background.activate()
-# 2
+Layers.background.activate()# 2
 # Wrapper Constructors
 generate =
 	raster: (id, pos, visible) ->
@@ -127,9 +142,57 @@ generate =
 			interval: seconds
 			event: event
 			repeat: repeat
-		console.log "Created timer #{timer.name} @#{window.time} > #{seconds}"
 		Timers.add timer
-		return# 3
+		return
+	tile: -> {}
+	# generate a stage that ought to have the grid 'n all that, etc
+	stage: (height, width) ->
+		stage = 
+			height: height
+			width: width
+			grid: do ->
+				# grid[X][Y]
+				grid = []
+				for x in [0..width-1]
+					column = []
+					for y in [0..height-1]
+						# push elements of column
+						column.push new generate.tile()
+					grid.push column
+				return grid
+			# grid coords of top left square
+			origin: do ->
+				o = [
+					(calculated.resolution[0] // 2)-(width // 2)
+					(calculated.resolution[1] // 2)-(height// 2)
+				]
+				console.log "origin is #{o}"
+				return o
+			activate: ->
+				hU = -(height // 2)
+				hD = height + hU
+				wL = -(width // 2)
+				wR = width + wL
+				center = coordToPix [
+					calculated.resolution[0]//2
+					calculated.resolution[1]//2
+				]
+				console.log "center is #{center}"
+				# courtesy of sublimetext. brute force...? unfortunately, I don't trust paperscript enough to do weird things...
+				# without incurring more debug time
+				Visuals.game.backWall.segments[0].point.x = center[0] + (coordToPix [wL, hU])[0]
+				Visuals.game.backWall.segments[1].point.x = center[0] + (coordToPix [wR, hU])[0]
+				Visuals.game.backWall.segments[2].point.x = center[0] + (coordToPix [wR, hD])[0]
+				Visuals.game.backWall.segments[3].point.x = center[0] + (coordToPix [wL, hD])[0]
+				Visuals.game.backWall.segments[1].point.y = center[1] + (coordToPix [wR, hU])[1]
+				Visuals.game.backWall.segments[0].point.y = center[1] + (coordToPix [wL, hU])[1]
+				Visuals.game.backWall.segments[2].point.y = center[1] + (coordToPix [wR, hD])[1]
+				Visuals.game.backWall.segments[3].point.y = center[1] + (coordToPix [wL, hD])[1]
+				Layers.backWall.visible = true
+				# move cursor to origin
+				Cursor.moveTo @origin[0], @origin[1]
+				Cursor.lowerBounds = @origin
+				Cursor.upperBounds = [@origin[0] + width, @origin[1] + height]# 3
 # Setup all visuals
 Visuals =
 	# BACKGROUND
@@ -174,6 +237,17 @@ Visuals =
 					strokeWidth: setting.game.gridWidth
 			Layers.grid.visible = false
 			return out
+		backWall: do ->
+			Layers.backWall.activate()
+			Layers.backWall.visible = false
+			return new Path
+				segments: [
+					[0, 0]
+					[1, 0]
+					[1, 1]
+					[0, 1]
+				]
+				fillColor: setting.game.backWallColor
 	# cursor selector in game portion - set at zero so moving is done by layer
 	cursor: do ->
 		Layers.cursor.activate()
@@ -337,7 +411,7 @@ Game =
 			wheel: -2
 
 
-	activeStage: null
+	currStage: null
 
 	activate: ->
 		Layers.grid.visible = true
@@ -352,37 +426,43 @@ Game =
 	# Set a stage - activate a stage
 	set: (stage) ->
 
-		@activeStage = stage
+		@currStage = stage
+		stage.activate()
 
 
 # Stages
 Stage =
-	testing: 0
+	testing: generate.stage 5, 5
 
 
 Cursor =
-	bounds: calculated.resolution
+	lowerBounds: [0, 0]
+	upperBounds: calculated.resolution
 	# Grid coordinate
 	coordinate:
 		# PROBABLY in the middle?
-		[(setting.game.width // setting.game.gridInterval) // 2, (setting.game.height // setting.game.gridInterval) // 2]
+		[calculated.resolution[0] // 2, calculated.resolution[1] // 2]
 	# in grid coordinates
 	# cool sliding movement (however, coming with latency) can be implemented LATER and not NOW
 	move: (x, y) ->
-		@coordinate[0] += x
-		if @coordinate[0] >= @bounds[0] then @coordinate[0] %= @bounds[0]
-		@coordinate[0] += @bounds[0] if @coordinate[0] < 0
-			
-		@coordinate[1] += y
-		if @coordinate[1] >= @bounds[1] then @coordinate[1] %= @bounds[1]
-		@coordinate[1] += @bounds[1] if @coordinate[1] < 0
+		for i in [0, 1]
+			@coordinate[i] += (if i is 0 then x else y)
+			@coordinate[i] -= (@upperBounds[i] - @lowerBounds[i]) if @coordinate[i] >= @upperBounds[i]
+			@coordinate[i] += (@upperBounds[i] - @lowerBounds[i]) if @coordinate[i] < @lowerBounds[i]
+
 		console.log "Moved cursor to position #{@coordinate}"
 		Layers.cursor.position.x = setting.game.gridInterval * @coordinate[0] + (setting.game.gridInterval//2)
 		Layers.cursor.position.y = setting.game.gridInterval * @coordinate[1] + (setting.game.gridInterval//2)
+	# also in grid coords
+	moveTo: (x, y) ->
+		@move(x - @coordinate[0], y - @coordinate[1])
 	up: -> @move 0, -1
 	down: -> @move 0, 1
 	left: -> @move -1, 0
 	right: -> @move 1, 0
+
+	currentItem: undefined
+
 	select: -> 0
 	enabled: false
 
@@ -444,6 +524,8 @@ Scene =
 			Visuals.textBox.calm()
 			Scene.advance()
 		[0, "First, use the arrow keys to move the cursor."]
+		->
+			Scene.end()
 	]
 
 	end: ->
@@ -533,3 +615,46 @@ onFrame = (event) ->
 	
 
 
+# 8
+
+# Hard mechanics and gameplay
+
+# Mechanical objects
+Mech =
+	# side walls
+	wall: (@dir) ->
+	hole: (@id) ->
+	cover: ->
+	wedge: (@dir) ->
+	rope: (@dir) ->
+	gate: (@dir) ->
+	wheel: ->
+
+Ports = []
+
+##
+# type -
+#   1: inlet
+#  -1: outlet
+Port = (type, id)->
+	port = 
+		type: type
+		id: id
+
+Cursor.currentItem = Mech.wall
+
+# create new magical liquid
+# magical liquid - head and trail are different
+# directions:
+# 5 7 6
+# 3 8 4
+# 1 0 2
+Liq = ->
+	liq =
+		dir: 8
+
+# calculate all liquid flows
+flow = ->
+	# exhaust
+	# flow all existing liquids
+	# intake

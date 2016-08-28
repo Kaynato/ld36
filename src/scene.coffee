@@ -56,6 +56,8 @@ Scene =
 			Visuals.textBox.calm()
 			Scene.advance()
 		[0, "First, use the arrow keys to move the cursor."]
+		->
+			Scene.end()
 	]
 
 	end: ->
