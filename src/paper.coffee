@@ -8,7 +8,6 @@ Math.randInt = (min, max) ->
 	min + Math.floor(Math.random()*(max-min+1))
 
 # SET CONTEXT
-window.GameContext = 'menu'
 window.time = 0
 
 # Constants - SHOULD BE JSON EVENTUALLY
@@ -24,6 +23,11 @@ setting =
 		crossColor: 'black'
 		crossWidth: 0.8
 		backWallColor: new Color 0, 0, 0, 0.2
+		inletColor: new Color 0, 0, 1, 0.5
+		outletColor: new Color 1, 0, 0, 0.5
+		wallWidth: 2
+		wallPermaColor: new Color 0.5, 0, 0
+		liquidColor: new Color 0, 0.3, 0.9, 0.5
 	menu:
 		xpos: 620
 		xSelectOffset: 30
@@ -67,11 +71,6 @@ Timers =
 			if x.name is name
 				a.splice i, 1
 
-contextTransition = (newContext) ->
-	# Do whatever is necessary to transition to new context here
-	# And then finally set context
-	window.GameContext = newContext
-
 # takes in coordinate array [x y]
 coordToPix = (coord) ->
 	if !Number.isNaN coord[0]
@@ -113,7 +112,249 @@ Layers =
 	# Overlay (just in case)
 	overlay: new Layer()
 
-Layers.background.activate()# 2
+Layers.background.activate()# 1B
+
+# Hard mechanics and gameplay
+
+# utils
+GridUtil = 
+	onStage: (x,y) ->
+		x >= 0 and x < Game.currStage.grid.length and y >= 0 and y < Game.currStage.grid[0].length
+	hasElem: (x, y, elem, xoff = 0, yoff = 0) ->
+		Game.currStage.grid[x+xoff][y+yoff][elem]?
+	exhaustIfPossible: (tile) ->
+		if tile.hole? and tile.hole.type is -1
+			tile.hole.ticker.push Game.currStage.tick
+
+	# i'll fix this someday, maybe set pararms and call paramless functions
+	## TODO liq tail
+	## TODO DRAW
+	## TODO WEDGE 
+	## TODO WATER INTERACTION
+	flowD: (liq, tile, grid, x, y) ->
+		@trail tile
+		if !@onStage x, y+1 then return console.err "tile out of bounds!"
+		grid[x][y + 1].liq = liq
+		liq.segm.curr[2].point.y += game.setting.gridInterval
+		liq.segm.curr[3].point.y += game.setting.gridInterval
+		liq.dir = 0
+	flowL: (liq, tile, grid, x, y) ->
+		@trail tile
+		if !@onStage x-1, y then return console.err "tile out of bounds!"
+		grid[x-1][y].liq = liq
+		liq.dir = 1
+		liq.segm.curr[0].point.x -= game.setting.gridInterval
+		liq.segm.curr[3].point.x -= game.setting.gridInterval
+	flowR: (liq, tile, grid, x, y) ->
+		@trail tile
+		if !@onStage x+1, y then return console.err "tile out of bounds!"
+		grid[x+1][y].liq = liq
+		liq.dir = 2
+		liq.segm.curr[1].point.x += game.setting.gridInterval
+		liq.segm.curr[2].point.x += game.setting.gridInterval
+	flowLD: (liq, tile, grid, x, y) ->
+		@trail tile
+		if !@onStage x-1, y then return console.err "tile out of bounds!"
+		if !@onStage x-1, y+1 then return console.err "tile out of bounds!"
+		grid[x-1][y+1].liq = liq
+		liq.dir = 1
+	flowLR: (liq, tile, grid, x, y) ->
+		@trail tile
+		if !@onStage x+1, y then return console.err "tile out of bounds!"
+		if !@onStage x+1, y+1 then return console.err "tile out of bounds!"
+		grid[x+1][y+1].liq = liq
+		liq.dir = 2
+
+	##
+	# leave a trail and move water away
+	stopFlow: (liq, tile, array, index) ->
+		# remove 'n such'
+		@trail tile
+		array.splice index, 1
+	trail: (tile) ->
+		tile.trail = true
+		tile.liq = null
+
+
+	
+# Mechanical objects
+Mech =
+	enable: false
+	# side walls
+	# wall: (@dir) ->
+	# // redundant
+	#
+	##
+	# type -
+	#   1: inlet
+	#  -1: outlet
+	hole: (type, label, x, y) ->
+		Layers.holes.activate()
+		hole = new Path.Circle
+			center: do ->
+				R = coordToPix [x, y]
+				R[0] += setting.game.gridInterval //2
+				R[1] += setting.game.gridInterval //2
+				return R
+			radius: (setting.game.gridInterval * 2) // 5
+			fillColor: if type is 1 then setting.game.inletColor else setting.game.outletColor
+			visible: false
+		hole.type = type
+		hole.label = label
+		hole.x = x
+		hole.y = y
+		hole.ticker = []
+		console.log "generated #{if hole.type is 1 then 'inlet' else 'outlet'} \'#{label}\' at #{hole.x}, #{hole.y}"
+		return hole
+	cover: ->
+	wedge: (@dir) ->
+	splitter: ->
+	rope: (@dir) ->
+	gate: (@dir) ->
+	wheel: ->
+	# calculate all liquid flows.
+	# exhaust/move, spawn
+	tick: ->
+		Game.currStage.tick++
+		# for every active liquid head tile and tail tile consider the square which it is on
+		Game.currStage.liq.forEach (liq,i,a) ->
+			tile = Game.currStage.grid[liq.x][liq.y]
+
+			# slants?
+			if tile.Z then liq.dir = 1
+			if tile.Y then liq.dir = 2
+
+			# straight down
+			if liq.dir is 0
+				# tile beneath
+				if tile.D
+					# both left
+					if !tile.L and !tile.Z
+						GridUtil.flowL liq, tile, Game.currStage.grid, x, y
+					# right
+					if !tile.R and !tile.Y
+						GridUtil.flowR liq, tile, Game.currStage.grid, x, y
+					# grotto and hole
+					if tile.L and tile.R and !tile.Z and !tile.Y
+						GridUtil.exhaustIfPossible tile
+					# then eliminate on this tile
+					Grid.Util.stopFlow liq, tile, a, i
+				# no tile beneath
+				else 
+					GridUtil.flowD liq, tile, Game.currStage.grid, x, y
+
+			# LD - can affect motion
+			else if liq.dir is 1
+				# left open
+				if !tile.L and !tile.Y
+					if !Game.currStage.grid[liq.x - 1][liq.y].D
+						GridUtil.flowLD liq, tile, Game.currStage.grid, x, y
+					else
+						GridUtil.flowL liq, tile, Game.currStage.grid, x, y
+				# left closed but bottom open
+				else if !tile.D and !tile.Z and !tile.Y
+					GridUtil.flowD liq, tile, Game.currStage.grid, x, y
+				# left closed bottom closed right open
+				else if !tile.R and !tile.Z
+					GridUtil.flowR liq, tile, Game.currStage.grid, x, y
+				# grotto
+				else 
+					GridUtil.exhaustIfPossible tile
+				# leave a trail and move water away
+				GridUtil.stopFlow liq, tile, a, i
+
+			# RD - can affect motion
+			else if liq.dir is 2
+				# right open
+				if !tile.R and !tile.Z
+					if !Game.currStage.grid[liq.x + 1][liq.y].D
+						GridUtil.flowRD liq, tile, Game.currStage.grid, x, y
+					else
+						GridUtil.flowR liq, tile, Game.currStage.grid, x, y
+				# right closed but bottom open
+				else if !tile.D and !tile.Z and !tile.Y
+					GridUtil.flowD liq, tile, Game.currStage.grid, x, y
+				# right closed bottom closed right open
+				else if !tile.L and !tile.Y
+					GridUtil.flowL liq, tile, Game.currStage.grid, x, y
+				# grotto
+				else 
+					GridUtil.exhaustIfPossible tile
+				# leave a trail and move water away
+				GridUtil.stopFlow liq, tile, a, i
+
+		# for every hole in the stage check the tile to spawn
+		Game.currStage.holes.forEach (hole,i,a) ->
+			tile = Game.currStage.grid[hole.x][hole.y]
+			# spawn if no liquid and no trail
+			if !tile.liq? and !tile.trail and hole.type is 1
+				tile.liq = new Liq 1, hole.x, hole.y
+
+		console.log "advanced hydraulics simulation"
+		return
+
+# tile can include:
+#
+# UDLR YZ - walls. Y and Z are respectively \ and /
+# 	values:
+# 		0 none
+# 		1 placed
+# 		2 permanent
+# 
+# TODO : walls are by BITWISE
+# 
+# 
+# holes. important
+# 
+# cover
+# 
+# liquid head (liq)
+# trail (lir)
+# liquid tail (lit)
+# 
+# rope
+# gates or wheels
+
+
+# create new magical liquid
+# magical liquid - head and trail are different
+# directions:
+# 5 7 6
+# 3 8 4
+# 1 0 2
+#
+# types:
+#	1: head - moves normally and also interacts, leaves trail
+#  -1: tail - moves normally but doesn't interact, clears trail
+#
+# TODO liq and trails should be different
+#
+Liq = (type, x, y) ->
+	liq =
+		dir: 0
+		type: type
+	# array order: top left, top right, bottom right, bottom left
+	liq.segm =
+		origin: [
+			new Segment coordToPix [x, y]
+			new Segment coordToPix [x+1, y]
+			new Segment coordToPix [x+1, y+1]
+			new Segment coordToPix [x, y+1]
+		]
+	# new liquid current is same as original, but should have same references
+	liq.segm.curr = [
+		liq.segm.origin[0]
+		liq.segm.origin[1]
+		liq.segm.origin[2]
+		liq.segm.origin[3]
+	]
+	liq.path = do ->
+		Layers.liquid.activate()
+		p = new Path
+			segments: liq.segm.origin
+			fillColor: setting.game.liquidColor
+
+# 2
 # Wrapper Constructors
 generate =
 	raster: (id, pos, visible) ->
@@ -146,8 +387,20 @@ generate =
 		return
 	tile: -> {}
 	# generate a stage that ought to have the grid 'n all that, etc
-	stage: (height, width) ->
-		stage = 
+	#
+	# height - tiles of height
+	# width - tiles of width
+	# holes - array of
+	#   [HOLETYPE, ID, X, Y]
+	#
+	#
+
+	stage: (name, height, width, holes) ->
+		console.log "generating stage #{name}"
+		# independent inits
+		stage =
+			tick: 0
+			name: name
 			height: height
 			width: width
 			grid: do ->
@@ -168,7 +421,31 @@ generate =
 				]
 				console.log "origin is #{o}"
 				return o
-			activate: ->
+			# liquid tile heads
+			liq: []
+			active: false
+		# dep' inits
+		stage.holes = do ->
+			o = []
+			for hole in holes
+				# assign hole for each hole
+				stage.grid[hole.x][hole.y].hole = hole
+				# add to array
+				o.push hole
+			return o
+
+		# place surrounding walls
+		leftTile.L = 2 for leftTile in stage.grid[0]
+		leftTile.R = 2 for leftTile in stage.grid[width - 1]
+		column[0].U = 2 for column in stage.grid
+		column[height - 1].D = 2 for column in stage.grid
+
+		stage.activate = ->
+				if @active
+					console.log "stage #{name} already active!"
+					return false
+				@active = true
+				console.log "prepping stage #{name}"
 				hU = -(height // 2)
 				hD = height + hU
 				wL = -(width // 2)
@@ -177,7 +454,7 @@ generate =
 					calculated.resolution[0]//2
 					calculated.resolution[1]//2
 				]
-				console.log "center is #{center}"
+				console.log "stage center is #{center}"
 				# courtesy of sublimetext. brute force...? unfortunately, I don't trust paperscript enough to do weird things...
 				# without incurring more debug time
 				Visuals.game.backWall.segments[0].point.x = center[0] + (coordToPix [wL, hU])[0]
@@ -189,10 +466,18 @@ generate =
 				Visuals.game.backWall.segments[2].point.y = center[1] + (coordToPix [wR, hD])[1]
 				Visuals.game.backWall.segments[3].point.y = center[1] + (coordToPix [wL, hD])[1]
 				Layers.backWall.visible = true
+				# move holes layer accordingly
+				Layers.holes.position = coordToPix @origin
+				Layers.liquid.position = coordToPix @origin
+				for hole in @holes
+					hole.visible = true
+					console.log "#{if hole.type is 1 then 'inlet' else if hole.type is -1 then 'outlet' else 'ERROR'} at #{hole.x}, #{hole.y} activated"
 				# move cursor to origin
 				Cursor.moveTo @origin[0], @origin[1]
 				Cursor.lowerBounds = @origin
-				Cursor.upperBounds = [@origin[0] + width, @origin[1] + height]# 3
+				Cursor.upperBounds = [@origin[0] + width, @origin[1] + height]
+				return true
+		return stage# 3
 # Setup all visuals
 Visuals =
 	# BACKGROUND
@@ -248,6 +533,9 @@ Visuals =
 					[0, 1]
 				]
 				fillColor: setting.game.backWallColor
+				strokeColor: setting.game.wallPermaColor
+				strokeWidth: setting.game.wallWidth
+				closed: true
 	# cursor selector in game portion - set at zero so moving is done by layer
 	cursor: do ->
 		Layers.cursor.activate()
@@ -331,6 +619,7 @@ Visuals =
 				@char++
 				return true
 			else
+				console.log "finished writing"
 				@writing = false
 				return false
 		box.skip = ->
@@ -350,13 +639,21 @@ Visuals =
 		box.calm = ->
 			Timers.remove "textBoxJitter"
 		return box
-# 4
+
+
+###
+
+visuals for mechanics objects are in mechanics and not here
+
+#### 4
 # THE CURSE OF USING MENU.CURSOR
 Menu =
-	cursor: 1 # preset used in further creation
+	enabled: true
+	cursor: 1 # preset used in further creation, unfortunately???
 	err: -> console.log "Menu function not supported."
 	start: ->
-		contextTransition 'scene'
+		Menu.enabled = false
+		Scene.enabled = true
 		# Turn off Menu functions
 		Visuals.menubg.visible = false
 		for option in Menu.options
@@ -392,8 +689,8 @@ Menu.select = (selection) ->
 		when Menu.m_sandbox then @sandbox()# 5
 # Game.coffee - static game object
 Game =
-	
 	# player info
+	# honestly I don't think I'll finish this part in time for the compo's end
 	info:
 		money: 100
 		# How many things you have.
@@ -417,6 +714,7 @@ Game =
 		Layers.grid.visible = true
 		Layers.cursor.visible = true
 		Visuals.backboard.visible = true
+		@currStage.activate()
 
 	deactivate: ->
 		Layers.grid.visible = false
@@ -425,14 +723,15 @@ Game =
 
 	# Set a stage - activate a stage
 	set: (stage) ->
-
 		@currStage = stage
-		stage.activate()
 
 
 # Stages
 Stage =
-	testing: generate.stage 5, 5
+	testing: generate.stage "testing", 5, 5, [
+			new Mech.hole  1, 'input', 2, 0
+			new Mech.hole -1, 'output', 2, 4
+		]
 
 
 Cursor =
@@ -461,7 +760,7 @@ Cursor =
 	left: -> @move -1, 0
 	right: -> @move 1, 0
 
-	currentItem: undefined
+	currentItem: Mech.wall
 
 	select: -> 0
 	enabled: false
@@ -475,6 +774,8 @@ Cursor =
 # SCENE OBJECTS STILL MUST BE DEACTIVATED!!! Context determines KEY FUNCTION.
 
 Scene =
+	enabled: false
+
 	# write text with character (or no character)
 	write: (char, text) ->
 		# clean textbox and prep writing
@@ -514,18 +815,31 @@ Scene =
 			Game.set Stage.testing
 			Game.activate()
 			Scene.advance()
+			return
 		[0, "This is the canvas on which shall be created..."]
 		->
 			Visuals.textBox.jitter()
 			Scene.advance()
+			return
 		[0, "The greatest invention known to the world!"]
 		->
-			Cursor.enabled = true
 			Visuals.textBox.calm()
 			Scene.advance()
+			return
+		[0, "Managing the waterworks of this city is too much work, so\nwhy not craft an automaton of flowing water?"]
+		-> 
+			Cursor.enabled = true
+			Scene.advance()
+			return
 		[0, "First, use the arrow keys to move the cursor."]
+		[2, "Not saying that the spacebar advances mechanics?"]
+		[2, "The player's not even here yet, remember..."]
+		[0, "..."]
+		[0, "ACKNOWLEDGED."]
 		->
+			Mech.enabled = true
 			Scene.end()
+			return
 	]
 
 	end: ->
@@ -562,31 +876,31 @@ Scene =
 				return false# 7
 
 # probably make this configurable
-actionKey = ['enter', 'space', 'z']
+actionKey = ['enter', 'z']
 returnKey = ['escape', 'x']
+proceedKey = ['space']
 
 # KEY DOWN
 onKeyDown = (event) ->
-	switch window.GameContext
-		when 'menu'
-			if event.key is 'down' or event.key is 'up'
-				# Unselect previous
-				Menu.options[Menu.cursor].position.x += setting.menu.xSelectOffset
-				# Move cursor
-				if event.key is 'down' then Menu.cursor++ else Menu.cursor--
-				if Menu.cursor >= Menu.options.length
-					Menu.cursor %= Menu.options.length
-				if Menu.cursor < 0
-					Menu.cursor += Menu.options.length
-				# Select next
-				Menu.options[Menu.cursor].position.x -= setting.menu.xSelectOffset
-			if event.key in actionKey
-				Menu.select Menu.options[Menu.cursor]
-		when 'scene'
-			if event.key in actionKey
-				Scene.advance()
-			if event.key in returnKey
-				Visuals.textBox.skip()
+	if Menu.enabled
+		if event.key is 'down' or event.key is 'up'
+			# Unselect previous
+			Menu.options[Menu.cursor].position.x += setting.menu.xSelectOffset
+			# Move cursor
+			if event.key is 'down' then Menu.cursor++ else Menu.cursor--
+			if Menu.cursor >= Menu.options.length
+				Menu.cursor %= Menu.options.length
+			if Menu.cursor < 0
+				Menu.cursor += Menu.options.length
+			# Select next
+			Menu.options[Menu.cursor].position.x -= setting.menu.xSelectOffset
+		if event.key in actionKey
+			Menu.select Menu.options[Menu.cursor]
+	if Scene.enabled
+		if event.key in actionKey
+			Scene.advance()
+		if event.key in returnKey
+			Visuals.textBox.skip()
 	if Cursor.enabled
 		if event.key is 'up'
 			Cursor.up()
@@ -596,6 +910,9 @@ onKeyDown = (event) ->
 			Cursor.left()
 		if event.key is 'right'
 			Cursor.right()
+	if Mech.enabled
+		if event.key in proceedKey
+			Mech.tick()
 
 # Frame event
 onFrame = (event) ->
@@ -604,6 +921,7 @@ onFrame = (event) ->
 	if Timers.list.length isnt 0
 		Timers.list.forEach (x, i, a) ->
 			while x.target <= event.time and x.target isnt -1
+				console.log "fired timer #{x.name}"
 				x.event()
 				if x.repeat
 					x.target += x.interval
@@ -612,49 +930,6 @@ onFrame = (event) ->
 					x.target = -1
 					a.splice i, 1
 			return
-	
 
 
-# 8
 
-# Hard mechanics and gameplay
-
-# Mechanical objects
-Mech =
-	# side walls
-	wall: (@dir) ->
-	hole: (@id) ->
-	cover: ->
-	wedge: (@dir) ->
-	rope: (@dir) ->
-	gate: (@dir) ->
-	wheel: ->
-
-Ports = []
-
-##
-# type -
-#   1: inlet
-#  -1: outlet
-Port = (type, id)->
-	port = 
-		type: type
-		id: id
-
-Cursor.currentItem = Mech.wall
-
-# create new magical liquid
-# magical liquid - head and trail are different
-# directions:
-# 5 7 6
-# 3 8 4
-# 1 0 2
-Liq = ->
-	liq =
-		dir: 8
-
-# calculate all liquid flows
-flow = ->
-	# exhaust
-	# flow all existing liquids
-	# intake

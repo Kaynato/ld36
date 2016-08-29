@@ -1,10 +1,12 @@
 # 4
 # THE CURSE OF USING MENU.CURSOR
 Menu =
-	cursor: 1 # preset used in further creation
+	enabled: true
+	cursor: 1 # preset used in further creation, unfortunately???
 	err: -> console.log "Menu function not supported."
 	start: ->
-		contextTransition 'scene'
+		Menu.enabled = false
+		Scene.enabled = true
 		# Turn off Menu functions
 		Visuals.menubg.visible = false
 		for option in Menu.options

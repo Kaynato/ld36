@@ -1,1 +1,1 @@
-copy /B .\src\setup.coffee + .\src\generate.coffee + .\src\visuals.coffee + .\src\menu.coffee + .\src\game.coffee + .\src\scene.coffee + .\src\event.coffee + .\src\mechanics.coffee .\src\paper.coffee & coffee -c -b --output ./js ./src/paper.coffee 
+copy /B .\src\setup.coffee + .\src\mechanics.coffee + .\src\generate.coffee + .\src\visuals.coffee + .\src\menu.coffee + .\src\game.coffee + .\src\scene.coffee + .\src\event.coffee .\src\paper.coffee & coffee -c -b --output ./js ./src/paper.coffee 

@@ -7,6 +7,8 @@
 # SCENE OBJECTS STILL MUST BE DEACTIVATED!!! Context determines KEY FUNCTION.
 
 Scene =
+	enabled: false
+
 	# write text with character (or no character)
 	write: (char, text) ->
 		# clean textbox and prep writing
@@ -46,18 +48,31 @@ Scene =
 			Game.set Stage.testing
 			Game.activate()
 			Scene.advance()
+			return
 		[0, "This is the canvas on which shall be created..."]
 		->
 			Visuals.textBox.jitter()
 			Scene.advance()
+			return
 		[0, "The greatest invention known to the world!"]
 		->
-			Cursor.enabled = true
 			Visuals.textBox.calm()
 			Scene.advance()
+			return
+		[0, "Managing the waterworks of this city is too much work, so\nwhy not craft an automaton of flowing water?"]
+		-> 
+			Cursor.enabled = true
+			Scene.advance()
+			return
 		[0, "First, use the arrow keys to move the cursor."]
+		[2, "Not saying that the spacebar advances mechanics?"]
+		[2, "The player's not even here yet, remember..."]
+		[0, "..."]
+		[0, "ACKNOWLEDGED."]
 		->
+			Mech.enabled = true
 			Scene.end()
+			return
 	]
 
 	end: ->

@@ -1,8 +1,8 @@
 # 5
 # Game.coffee - static game object
 Game =
-	
 	# player info
+	# honestly I don't think I'll finish this part in time for the compo's end
 	info:
 		money: 100
 		# How many things you have.
@@ -26,6 +26,7 @@ Game =
 		Layers.grid.visible = true
 		Layers.cursor.visible = true
 		Visuals.backboard.visible = true
+		@currStage.activate()
 
 	deactivate: ->
 		Layers.grid.visible = false
@@ -34,14 +35,15 @@ Game =
 
 	# Set a stage - activate a stage
 	set: (stage) ->
-
 		@currStage = stage
-		stage.activate()
 
 
 # Stages
 Stage =
-	testing: generate.stage 5, 5
+	testing: generate.stage "testing", 5, 5, [
+			new Mech.hole  1, 'input', 2, 0
+			new Mech.hole -1, 'output', 2, 4
+		]
 
 
 Cursor =
@@ -70,7 +72,7 @@ Cursor =
 	left: -> @move -1, 0
 	right: -> @move 1, 0
 
-	currentItem: undefined
+	currentItem: Mech.wall
 
 	select: -> 0
 	enabled: false

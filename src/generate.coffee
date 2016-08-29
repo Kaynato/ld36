@@ -31,8 +31,20 @@ generate =
 		return
 	tile: -> {}
 	# generate a stage that ought to have the grid 'n all that, etc
-	stage: (height, width) ->
-		stage = 
+	#
+	# height - tiles of height
+	# width - tiles of width
+	# holes - array of
+	#   [HOLETYPE, ID, X, Y]
+	#
+	#
+
+	stage: (name, height, width, holes) ->
+		console.log "generating stage #{name}"
+		# independent inits
+		stage =
+			tick: 0
+			name: name
 			height: height
 			width: width
 			grid: do ->
@@ -53,7 +65,31 @@ generate =
 				]
 				console.log "origin is #{o}"
 				return o
-			activate: ->
+			# liquid tile heads
+			liq: []
+			active: false
+		# dep' inits
+		stage.holes = do ->
+			o = []
+			for hole in holes
+				# assign hole for each hole
+				stage.grid[hole.x][hole.y].hole = hole
+				# add to array
+				o.push hole
+			return o
+
+		# place surrounding walls
+		leftTile.L = 2 for leftTile in stage.grid[0]
+		leftTile.R = 2 for leftTile in stage.grid[width - 1]
+		column[0].U = 2 for column in stage.grid
+		column[height - 1].D = 2 for column in stage.grid
+
+		stage.activate = ->
+				if @active
+					console.log "stage #{name} already active!"
+					return false
+				@active = true
+				console.log "prepping stage #{name}"
 				hU = -(height // 2)
 				hD = height + hU
 				wL = -(width // 2)
@@ -62,7 +98,7 @@ generate =
 					calculated.resolution[0]//2
 					calculated.resolution[1]//2
 				]
-				console.log "center is #{center}"
+				console.log "stage center is #{center}"
 				# courtesy of sublimetext. brute force...? unfortunately, I don't trust paperscript enough to do weird things...
 				# without incurring more debug time
 				Visuals.game.backWall.segments[0].point.x = center[0] + (coordToPix [wL, hU])[0]
@@ -74,7 +110,15 @@ generate =
 				Visuals.game.backWall.segments[2].point.y = center[1] + (coordToPix [wR, hD])[1]
 				Visuals.game.backWall.segments[3].point.y = center[1] + (coordToPix [wL, hD])[1]
 				Layers.backWall.visible = true
+				# move holes layer accordingly
+				Layers.holes.position = coordToPix @origin
+				Layers.liquid.position = coordToPix @origin
+				for hole in @holes
+					hole.visible = true
+					console.log "#{if hole.type is 1 then 'inlet' else if hole.type is -1 then 'outlet' else 'ERROR'} at #{hole.x}, #{hole.y} activated"
 				# move cursor to origin
 				Cursor.moveTo @origin[0], @origin[1]
 				Cursor.lowerBounds = @origin
 				Cursor.upperBounds = [@origin[0] + width, @origin[1] + height]
+				return true
+		return stage

@@ -54,6 +54,9 @@ Visuals =
 					[0, 1]
 				]
 				fillColor: setting.game.backWallColor
+				strokeColor: setting.game.wallPermaColor
+				strokeWidth: setting.game.wallWidth
+				closed: true
 	# cursor selector in game portion - set at zero so moving is done by layer
 	cursor: do ->
 		Layers.cursor.activate()
@@ -137,6 +140,7 @@ Visuals =
 				@char++
 				return true
 			else
+				console.log "finished writing"
 				@writing = false
 				return false
 		box.skip = ->
@@ -156,3 +160,10 @@ Visuals =
 		box.calm = ->
 			Timers.remove "textBoxJitter"
 		return box
+
+
+###
+
+visuals for mechanics objects are in mechanics and not here
+
+###
